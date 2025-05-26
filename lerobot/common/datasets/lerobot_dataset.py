@@ -109,6 +109,14 @@ class LeRobotDatasetMetadata:
         if self._version < packaging.version.parse("v2.1"):
             self.stats = load_stats(self.root)
             self.episodes_stats = backward_compatible_episodes_stats(self.stats, self.episodes)
+            if 'count' not in self.stats['episode_index']:
+                count = 0
+                for i, ep in enumerate(self.episodes.values()):
+                    count += ep['length']
+                    for key in self.episodes_stats[i].keys():
+                        self.episodes_stats[i][key]['count'] = np.array([ep['length']])
+                for key in self.stats.keys():
+                    self.stats[key]['count'] = np.array([count])
         else:
             self.episodes_stats = load_episodes_stats(self.root)
             self.stats = aggregate_stats(list(self.episodes_stats.values()))
