@@ -1070,7 +1070,7 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
                 root=self.root / repo_id,
                 episodes=episodes[repo_id] if episodes else None,
                 image_transforms=image_transforms,
-                delta_timestamps=delta_timestamps,
+                delta_timestamps=delta_timestamps[repo_id],
                 tolerance_s=self.tolerances_s[repo_id],
                 download_videos=download_videos,
                 video_backend=video_backend,
@@ -1103,7 +1103,7 @@ class MultiLeRobotDataset(torch.utils.data.Dataset):
         # TODO(rcadene, aliberts): We should not perform this aggregation for datasets
         # with multiple robots of different ranges. Instead we should have one normalization
         # per robot.
-        self.stats = aggregate_stats([dataset.meta.stats for dataset in self._datasets])
+        #self.stats = aggregate_stats([dataset.meta.stats for dataset in self._datasets])
 
     @property
     def repo_id_to_index(self):
