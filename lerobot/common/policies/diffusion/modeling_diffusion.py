@@ -181,8 +181,8 @@ class DiffusionModel(nn.Module):
         
         # Add force/torque encoder if configured
         if "observation.wrench.wrist" in self.config.input_features:
-            ft_config = getattr(self.config, "ft_encoder", None)
-            if ft_config is not None and ft_config.get("type") == "seq_cnn":
+            ft_config = getattr(self.config, "ft_encoder", {"type": "none"})
+            if ft_config.get("type") == "seq_cnn":
                 self.ft_encoder = SeqCNNEncoder(
                     input_dim=6,  # 6D force/torque
                     hidden_dims=ft_config.get("hidden_dims", [32, 64, 128]),
