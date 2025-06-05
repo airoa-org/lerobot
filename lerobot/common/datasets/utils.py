@@ -415,7 +415,7 @@ def dataset_to_policy_features(features: dict[str, dict]) -> dict[str, PolicyFea
             type = FeatureType.ENV
         elif key.startswith("observation"):
             type = FeatureType.STATE
-        elif key == "action":
+        elif key == "action" or key.startswith("action."):  # Handle both "action" and "action.relative"
             type = FeatureType.ACTION
         else:
             continue
