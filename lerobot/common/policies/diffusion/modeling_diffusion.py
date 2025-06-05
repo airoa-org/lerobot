@@ -43,6 +43,7 @@ from lerobot.common.policies.utils import (
     get_output_shape,
     populate_queues,
 )
+from geniac25_team3_haptics.models.seq_cnn import SeqCNNEncoder
 
 
 class DiffusionPolicy(PreTrainedPolicy):
@@ -177,6 +178,21 @@ class DiffusionModel(nn.Module):
 
         # Build observation encoders (depending on which observations are provided).
         global_cond_dim = self.config.robot_state_feature.shape[0]
+        
+        # Add force/torque encoder if configured
+        if "observation.wrench.wrist" in self.config.input_features:
+            ft_config = getattr(self.config, "ft_encoder", None)
+            if ft_config is not None and ft_config.get("type") == "seq_cnn":
+                self.ft_encoder = SeqCNNEncoder(
+                    input_dim=6,  # 6D force/torque
+                    hidden_dims=ft_config.get("hidden_dims", [32, 64, 128]),
+                    kernel_size=ft_config.get("kernel_size", 3),
+                    output_dim=ft_config.get("output_dim", 128)
+                )
+                global_cond_dim += ft_config.get("output_dim", 128)  # Add the output dimension of FT encoder
+            else:
+                self.ft_encoder = None
+        
         if self.config.image_features:
             num_images = len(self.config.image_features)
             if self.config.use_separate_rgb_encoder_per_camera:
@@ -240,6 +256,16 @@ class DiffusionModel(nn.Module):
         """Encode image features and concatenate them all together along with the state vector."""
         batch_size, n_obs_steps = batch[OBS_ROBOT].shape[:2]
         global_cond_feats = [batch[OBS_ROBOT]]
+        
+        # Add force/torque features if available and encoder is configured
+        if hasattr(self, 'ft_encoder') and self.ft_encoder is not None and "observation.wrench.wrist" in batch:
+            ft_features = self.ft_encoder(batch["observation.wrench.wrist"])
+            # Take only the last n_obs_steps frames to match other features
+            # TODO(tatsukamijo): This is a hack to make the force/torque features match the other features.
+            #                    Explore a better way to handle this.
+            ft_features = ft_features[:, -self.config.n_obs_steps:, :]
+            global_cond_feats.append(ft_features)
+        
         # Extract image features.
         if self.config.image_features:
             if self.config.use_separate_rgb_encoder_per_camera:
