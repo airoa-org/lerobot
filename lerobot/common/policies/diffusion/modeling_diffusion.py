@@ -43,7 +43,7 @@ from lerobot.common.policies.utils import (
     get_output_shape,
     populate_queues,
 )
-from geniac25_team3_haptics.models.seq_cnn import SeqCNNEncoder
+from g3_haptics.models.seq_cnn import SeqCNNEncoder
 
 
 class DiffusionPolicy(PreTrainedPolicy):
