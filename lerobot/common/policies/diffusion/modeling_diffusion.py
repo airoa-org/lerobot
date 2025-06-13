@@ -181,16 +181,18 @@ class DiffusionModel(nn.Module):
         
         # Add force/torque encoder if configured
         if "observation.wrench.wrist" in self.config.input_features:
-            ft_config = getattr(self.config, "ft_encoder", {"type": "none"})
-            if ft_config.get("type") == "seq_cnn":
+            if self.config.ft_encoder["type"] == "seq_cnn":
+                print("Creating SeqCNNEncoder")
                 self.ft_encoder = SeqCNNEncoder(
                     input_dim=6,  # 6D force/torque
-                    hidden_dims=ft_config.get("hidden_dims", [32, 64, 128]),
-                    kernel_size=ft_config.get("kernel_size", 3),
-                    output_dim=ft_config.get("output_dim", 128)
+                    hidden_dims=self.config.ft_encoder["hidden_dims"],
+                    kernel_size=self.config.ft_encoder["kernel_size"],
+                    output_dim=self.config.ft_encoder["output_dim"]
                 )
-                global_cond_dim += ft_config.get("output_dim", 128)  # Add the output dimension of FT encoder
+                data_per_frame = self.config.ft_encoder["data_per_frame"]
+                global_cond_dim += data_per_frame*self.config.ft_encoder["output_dim"]  # Add the output dimension of FT encoder
             else:
+                print(f"ft_encoder type is {self.config.ft_encoder['type']}, setting ft_encoder to None")
                 self.ft_encoder = None
         
         if self.config.image_features:
@@ -260,10 +262,6 @@ class DiffusionModel(nn.Module):
         # Add force/torque features if available and encoder is configured
         if hasattr(self, 'ft_encoder') and self.ft_encoder is not None and "observation.wrench.wrist" in batch:
             ft_features = self.ft_encoder(batch["observation.wrench.wrist"])
-            # Take only the last n_obs_steps frames to match other features
-            # TODO(tatsukamijo): This is a hack to make the force/torque features match the other features.
-            #                    Explore a better way to handle this.
-            ft_features = ft_features[:, -self.config.n_obs_steps:, :]
             global_cond_feats.append(ft_features)
         
         # Extract image features.

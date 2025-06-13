@@ -101,6 +101,11 @@ class DiffusionConfig(PreTrainedConfig):
         do_mask_loss_for_padding: Whether to mask the loss when there are copy-padded actions. See
             `LeRobotDataset` and `load_previous_and_future_frames` for more information. Note, this defaults
             to False as the original Diffusion Policy implementation does the same.
+        ft_encoder: Configuration for the force/torque encoder. Contains:
+            - type: Type of encoder to use. Options: ["none", "seq_cnn"]
+            - hidden_dims: List of hidden dimensions for each conv layer (only for seq_cnn)
+            - kernel_size: Kernel size for temporal convolution (only for seq_cnn)
+            - output_dim: Output dimension of the encoder (only for seq_cnn)
     """
 
     # Inputs / output structure.
@@ -159,6 +164,14 @@ class DiffusionConfig(PreTrainedConfig):
     scheduler_name: str = "cosine"
     scheduler_warmup_steps: int = 500
 
+    # Force/torque encoder
+    ft_encoder: dict = field(default_factory=lambda: {
+        "type": "none",
+        "hidden_dims": [32, 64, 128],
+        "kernel_size": 3,
+        "output_dim": 128
+    })
+
     def __post_init__(self):
         super().__post_init__()
 
@@ -178,6 +191,13 @@ class DiffusionConfig(PreTrainedConfig):
             raise ValueError(
                 f"`noise_scheduler_type` must be one of {supported_noise_schedulers}. "
                 f"Got {self.noise_scheduler_type}."
+            )
+
+        supported_ft_encoder_types = ["none", "seq_cnn"]
+        if self.ft_encoder["type"] not in supported_ft_encoder_types:
+            raise ValueError(
+                f"`ft_encoder.type` must be one of {supported_ft_encoder_types}. "
+                f"Got {self.ft_encoder['type']}."
             )
 
         # Check that the horizon size and U-Net downsampling is compatible.
