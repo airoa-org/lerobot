@@ -20,26 +20,27 @@ from pathlib import Path
 import einops
 import pytest
 import torch
+from packaging import version
 from safetensors.torch import load_file
 
 from lerobot import available_policies
-from lerobot.common.datasets.factory import make_dataset
-from lerobot.common.datasets.utils import cycle, dataset_to_policy_features
-from lerobot.common.envs.factory import make_env, make_env_config
-from lerobot.common.envs.utils import preprocess_observation
-from lerobot.common.optim.factory import make_optimizer_and_scheduler
-from lerobot.common.policies.act.modeling_act import ACTTemporalEnsembler
-from lerobot.common.policies.factory import (
+from lerobot.configs.default import DatasetConfig
+from lerobot.configs.train import TrainPipelineConfig
+from lerobot.configs.types import FeatureType, NormalizationMode, PolicyFeature
+from lerobot.datasets.factory import make_dataset
+from lerobot.datasets.utils import cycle, dataset_to_policy_features
+from lerobot.envs.factory import make_env, make_env_config
+from lerobot.envs.utils import preprocess_observation
+from lerobot.optim.factory import make_optimizer_and_scheduler
+from lerobot.policies.act.modeling_act import ACTTemporalEnsembler
+from lerobot.policies.factory import (
     get_policy_class,
     make_policy,
     make_policy_config,
 )
-from lerobot.common.policies.normalize import Normalize, Unnormalize
-from lerobot.common.policies.pretrained import PreTrainedPolicy
-from lerobot.common.utils.random_utils import seeded_context
-from lerobot.configs.default import DatasetConfig
-from lerobot.configs.train import TrainPipelineConfig
-from lerobot.configs.types import FeatureType, NormalizationMode, PolicyFeature
+from lerobot.policies.normalize import Normalize, Unnormalize
+from lerobot.policies.pretrained import PreTrainedPolicy
+from lerobot.utils.random_utils import seeded_context
 from tests.artifacts.policies.save_policy_to_safetensors import get_policy_stats
 from tests.utils import DEVICE, require_cpu, require_env, require_x86_64_kernel
 
@@ -141,9 +142,10 @@ def test_policy(ds_repo_id, env_name, env_kwargs, policy_name, policy_kwargs):
     train_cfg = TrainPipelineConfig(
         # TODO(rcadene, aliberts): remove dataset download
         dataset=DatasetConfig(repo_id=ds_repo_id, episodes=[0]),
-        policy=make_policy_config(policy_name, **policy_kwargs),
+        policy=make_policy_config(policy_name, push_to_hub=False, **policy_kwargs),
         env=make_env_config(env_name, **env_kwargs),
     )
+    train_cfg.validate()
 
     # Check that we can make the policy object.
     dataset = make_dataset(train_cfg)
@@ -212,7 +214,7 @@ def test_act_backbone_lr():
     cfg = TrainPipelineConfig(
         # TODO(rcadene, aliberts): remove dataset download
         dataset=DatasetConfig(repo_id="lerobot/aloha_sim_insertion_scripted", episodes=[0]),
-        policy=make_policy_config("act", optimizer_lr=0.01, optimizer_lr_backbone=0.001),
+        policy=make_policy_config("act", optimizer_lr=0.01, optimizer_lr_backbone=0.001, push_to_hub=False),
     )
     cfg.validate()  # Needed for auto-setting some parameters
 
@@ -408,7 +410,17 @@ def test_backward_compatibility(ds_repo_id: str, policy_name: str, policy_kwargs
         4. Check that this test now passes.
         5. Remember to restore `tests/scripts/save_policy_to_safetensors.py` to its original state.
         6. Remember to stage and commit the resulting changes to `tests/artifacts`.
+
+    NOTE: If the test does not pass, and you don't change the policy, it is likely that the test artifact
+    is out of date. For example, some PyTorch versions have different randomness, see this PR:
+    https://github.com/huggingface/lerobot/pull/1127.
+
     """
+
+    # NOTE: ACT policy has different randomness, after PyTorch 2.7.0
+    if policy_name == "act" and version.parse(torch.__version__) < version.parse("2.7.0"):
+        pytest.skip(f"Skipping act policy test with PyTorch {torch.__version__}. Requires PyTorch >= 2.7.0")
+
     ds_name = ds_repo_id.split("/")[-1]
     artifact_dir = Path("tests/artifacts/policies") / f"{ds_name}_{policy_name}_{file_name_extra}"
     saved_output_dict = load_file(artifact_dir / "output_dict.safetensors")
