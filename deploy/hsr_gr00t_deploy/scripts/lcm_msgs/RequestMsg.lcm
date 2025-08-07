@@ -1,0 +1,29 @@
+package lcm_msgs;
+
+struct CompressedImage
+{
+    string format;
+    int64_t timestamp;
+    int32_t width;
+    int32_t height;
+    int32_t data_length;          // 実際の有効長を示す
+    int8_t data[data_length];  // byteなので長さがものによる．
+}
+
+struct JointState
+{
+    int64_t timestamp;
+    int32_t num_joints;
+    string name[num_joints];
+    double position[num_joints];
+    double velocity[num_joints];
+    double effort[num_joints];
+}
+
+struct RequestMsg
+{
+    CompressedImage head_rgb;
+    CompressedImage hand_rgb;
+    JointState joint_state;
+    string instruction;
+}

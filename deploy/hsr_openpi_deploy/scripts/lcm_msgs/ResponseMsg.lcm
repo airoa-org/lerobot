@@ -1,0 +1,13 @@
+package lcm_msgs;
+
+struct ResponseMsg
+{
+    double hz;
+
+    int32_t num_joints;
+    string joint_names[num_joints];
+
+    int32_t rows;
+    int32_t cols;
+    double result[rows][cols];  // T x J の2次元配列
+}

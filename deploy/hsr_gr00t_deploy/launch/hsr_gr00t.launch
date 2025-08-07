@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<launch>
+    <arg name="checkpoint_dir" default="/home/openpi/checkpoints/pi0_hsr_low_mem_finetune/hsr_tmc_new/15000"/>
+    <arg name="update_freq" default="10"/>
+    <arg name="adopted_action_chunks" default="10"/>
+
+    <rosparam file="$(find hsr_data_collection)/config/hsr_data_collection_config.yaml" command="load"/>
+
+    <!-- NOTE: If rosbag_manager is started within HSR, please comment out the following rosbag_manager node-->
+    <node name="rosbag_manager" pkg="hsr_data_collection" type="rosbag_manager.py" output="screen">
+    </node>
+
+    <node name="status_led_manager" pkg="hsr_data_collection" type="status_led_manager.py" output="screen">
+    </node>
+
+    <node name="dualshock_teleop_interface" pkg="hsr_data_collection" type="dualshock_interface.py" output="screen">
+        <param name="init_instruction" value=""/>
+        <param name="use_spacemouse" value="false"/>
+    </node>
+
+    <node name="hsr_gr00t" pkg="hsr_gr00t" type="hsr_gr00t.py" output="screen">
+        <param name="checkpoint_dir" value="$(arg checkpoint_dir)"/>
+        <param name="adopted_action_chunks" value="$(arg adopted_action_chunks)"/>
+        <param name="update_freq" value="$(arg update_freq)"/>
+    </node>
+
+</launch>
