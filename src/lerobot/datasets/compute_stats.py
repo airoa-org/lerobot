@@ -16,6 +16,7 @@
 import numpy as np
 
 from lerobot.datasets.utils import load_image_as_numpy
+from typing import List
 
 
 def estimate_num_samples(
@@ -72,6 +73,19 @@ def sample_images(image_paths: list[str]) -> np.ndarray:
     return images
 
 
+def sample_images_from_arrays(image_arrays: List[np.ndarray]) -> np.ndarray:
+    """Return (N, C, H, W) uint8 from in-memory frames (HWC or CHW)."""
+    idxs = sample_indices(len(image_arrays)) if image_arrays else []
+    imgs: list[np.ndarray] = []
+    for i in idxs:
+        arr = image_arrays[i]
+        if arr.dtype != np.uint8:
+            arr = arr.astype(np.uint8, copy=False)
+        img = np.transpose(arr, (2, 0, 1)) if (arr.ndim == 3 and arr.shape[-1] == 3) else arr
+        imgs.append(auto_downsample_height_width(img))
+    return np.stack(imgs, axis=0) if imgs else np.zeros((0, 3, 1, 1), dtype=np.uint8)
+
+
 def get_feature_stats(array: np.ndarray, axis: tuple, keepdims: bool) -> dict[str, np.ndarray]:
     return {
         "min": np.min(array, axis=axis, keepdims=keepdims),
@@ -88,7 +102,11 @@ def compute_episode_stats(episode_data: dict[str, list[str] | np.ndarray], featu
         if features[key]["dtype"] == "string":
             continue  # HACK: we should receive np.arrays of strings
         elif features[key]["dtype"] in ["image", "video"]:
-            ep_ft_array = sample_images(data)  # data is a list of image paths
+            # data can be a list of file paths (default) or a list of in-memory arrays (memory backend)
+            if isinstance(data, list) and len(data) > 0 and isinstance(data[0], (str, bytes, bytearray)):
+                ep_ft_array = sample_images(data)  # list of image paths
+            else:
+                ep_ft_array = sample_images_from_arrays(data)  # list of np.ndarray
             axes_to_reduce = (0, 2, 3)  # keep channel dim
             keepdims = True
         else:
