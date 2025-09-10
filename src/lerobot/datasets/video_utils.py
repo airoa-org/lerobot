@@ -20,7 +20,7 @@ import shutil
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Iterable
 
 import av
 import pyarrow as pa
@@ -28,6 +28,7 @@ import torch
 import torchvision
 from datasets.features.features import register_feature
 from PIL import Image
+import numpy as np
 
 
 def get_safe_default_codec():
@@ -320,6 +321,91 @@ def encode_video_frames(
 
         # Flush the encoder
         packet = output_stream.encode()
+        if packet:
+            output.mux(packet)
+
+    # Reset logging level
+    if log_level is not None:
+        av.logging.restore_default_callback()
+
+    if not video_path.exists():
+        raise OSError(f"Video encoding did not work. File not found: {video_path}.")
+
+
+def encode_video_frames_in_memory(
+    frames: Iterable[np.ndarray],
+    video_path: Path | str,
+    fps: int,
+    vcodec: str = "libsvtav1",
+    pix_fmt: str = "yuv420p",
+    g: int | None = 2,
+    crf: int | None = 30,
+    fast_decode: int = 0,
+    log_level: int | None = av.logging.ERROR,
+    overwrite: bool = True,
+    input_format: str = "rgb24",
+) -> None:
+    """Encode frames already in memory without writing PNG images."""
+    # Check encoder availability
+    if vcodec not in ["h264", "hevc", "libsvtav1"]:
+        raise ValueError(f"Unsupported video codec: {vcodec}. Supported codecs are: h264, hevc, libsvtav1.")
+
+    # Encoders/pixel formats incompatibility check
+    if (vcodec == "libsvtav1" or vcodec == "hevc") and pix_fmt == "yuv444p":
+        logging.warning(
+            f"Incompatible pixel format 'yuv444p' for codec {vcodec}, auto-selecting format 'yuv420p'"
+        )
+        pix_fmt = "yuv420p"
+
+    frames_iter = iter(frames)
+    first = next(frames_iter)
+
+    if first.dtype != np.uint8:
+        first = first.astype(np.uint8, copy=False)
+    height, width = int(first.shape[0]), int(first.shape[1])
+
+    video_path = Path(video_path)
+    video_path.parent.mkdir(parents=True, exist_ok=overwrite)
+
+    # Define video codec options
+    video_options: dict[str, str] = {}
+    if g is not None:
+        video_options["g"] = str(g)
+    if crf is not None:
+        video_options["crf"] = str(crf)
+    if fast_decode:
+        key = "svtav1-params" if vcodec == "libsvtav1" else "tune"
+        value = f"fast-decode={fast_decode}" if vcodec == "libsvtav1" else "fastdecode"
+        video_options[key] = value
+
+    # Set logging level
+    if log_level is not None:
+        # "While less efficient, it is generally preferable to modify logging with Python’s logging"
+        logging.getLogger("libav").setLevel(log_level)
+
+    # Create and open output file (overwrite by default)
+    with av.open(str(video_path), "w") as output:
+        stream = output.add_stream(vcodec, fps, options=video_options)
+        stream.pix_fmt = pix_fmt
+        stream.width = width
+        stream.height = height
+
+        def push(arr: np.ndarray) -> None:
+            if arr.dtype != np.uint8:
+                arr = arr.astype(np.uint8, copy=False)
+
+            arr = np.ascontiguousarray(arr)
+            frame = av.VideoFrame.from_ndarray(arr, format=input_format)
+            packet = stream.encode(frame)
+            if packet:
+                output.mux(packet)
+
+        push(first)
+        for f in frames_iter:
+            push(f)
+
+        # Flush the encoder
+        packet = stream.encode()
         if packet:
             output.mux(packet)
 
