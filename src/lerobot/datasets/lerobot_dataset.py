@@ -458,9 +458,8 @@ class LeRobotDataset(torch.utils.data.Dataset):
         self.delta_indices = None
         self.batch_encoding_size = batch_encoding_size
         self.episodes_since_last_encoding = 0
-        # エンコード関連のデフォルト（読みやすさのため getattr を避ける）
-        self.video_encode_backend = "file_sequence"
-        self.video_input_format = "rgb24"
+        self.frame_staging = "disk"  # or "memory"
+        self.input_pix_fmt = "rgb24"
 
         # Unused attributes
         self.image_writer = None
@@ -803,7 +802,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
 
             dtype = self.features[key]["dtype"]
             if dtype in ["image", "video"]:
-                if dtype == "video" and self.video_encode_backend == "memory_pyav":
+                if dtype == "video" and self.frame_staging == "memory":
                     arr = frame[key]
                     if isinstance(arr, torch.Tensor):
                         arr = arr.cpu().numpy()
@@ -992,7 +991,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
                     video_path,
                     self.fps,
                     overwrite=True,
-                    input_format=getattr(self, "video_input_format", "rgb24"),
+                    input_format=self.input_pix_fmt,
                 )
             else:
                 img_dir = self._get_image_file_path(
@@ -1041,8 +1040,8 @@ class LeRobotDataset(torch.utils.data.Dataset):
         image_writer_threads: int = 0,
         video_backend: str | None = None,
         batch_encoding_size: int = 1,
-        video_encode_backend: str | None = None,
-        video_input_format: str = "rgb24",
+        frame_staging: str = "disk",
+        input_pix_fmt: str = "rgb24",
     ) -> "LeRobotDataset":
         """Create a LeRobot Dataset from scratch in order to record data."""
         obj = cls.__new__(cls)
@@ -1075,15 +1074,13 @@ class LeRobotDataset(torch.utils.data.Dataset):
         obj.delta_indices = None
         obj.episode_data_index = None
         obj.video_backend = video_backend if video_backend is not None else get_safe_default_codec()
-        obj.video_encode_backend = (
-            video_encode_backend if video_encode_backend is not None else "file_sequence"
-        )
-        obj.video_input_format = video_input_format
-        if obj.video_encode_backend == "memory_pyav" and obj.batch_encoding_size > 1:
+        obj.frame_staging = frame_staging
+        obj.input_pix_fmt = input_pix_fmt
+        if obj.frame_staging == "memory" and obj.batch_encoding_size > 1:
             logging.warning(
-                "memory_pyav backend does not support batch_encoding_size>1; falling back to file_sequence."
+                "'memory' frame_staging does not support batch_encoding_size>1; falling back to 'disk'."
             )
-            obj.video_encode_backend = "file_sequence"
+            obj.frame_staging = "disk"
         return obj
 
 
