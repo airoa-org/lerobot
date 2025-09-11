@@ -18,7 +18,7 @@ import importlib
 import logging
 import shutil
 import warnings
-from collections.abc import Iterable
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
@@ -334,7 +334,7 @@ def encode_video_frames(
 
 
 def encode_video_frames_in_memory(
-    frames: Iterable[np.ndarray],
+    frames: Sequence[np.ndarray],
     video_path: Path | str,
     fps: int,
     vcodec: str = "libsvtav1",
@@ -344,7 +344,7 @@ def encode_video_frames_in_memory(
     fast_decode: int = 0,
     log_level: int | None = av.logging.ERROR,
     overwrite: bool = True,
-    input_format: str = "rgb24",
+    input_pix_fmt: str = "rgb24",
 ) -> None:
     """Encode frames already in memory without writing PNG images."""
     # Check encoder availability
@@ -358,12 +358,9 @@ def encode_video_frames_in_memory(
         )
         pix_fmt = "yuv420p"
 
-    frames_iter = iter(frames)
-    first = next(frames_iter)
-
-    if first.dtype != np.uint8:
-        first = first.astype(np.uint8, copy=False)
-    height, width = int(first.shape[0]), int(first.shape[1])
+    if not frames:
+        raise FileNotFoundError("No frames provided for in-memory encoding.")
+    height, width = int(frames[0].shape[0]), int(frames[0].shape[1])
 
     video_path = Path(video_path)
     video_path.parent.mkdir(parents=True, exist_ok=overwrite)
@@ -391,19 +388,13 @@ def encode_video_frames_in_memory(
         stream.width = width
         stream.height = height
 
-        def push(arr: np.ndarray) -> None:
-            if arr.dtype != np.uint8:
-                arr = arr.astype(np.uint8, copy=False)
-
-            arr = np.ascontiguousarray(arr)
-            frame = av.VideoFrame.from_ndarray(arr, format=input_format)
+        for frame in frames:
+            frame = frame.astype(np.uint8, copy=False)
+            frame = np.ascontiguousarray(frame)
+            frame = av.VideoFrame.from_ndarray(frame, format=input_pix_fmt)
             packet = stream.encode(frame)
             if packet:
                 output.mux(packet)
-
-        push(first)
-        for f in frames_iter:
-            push(f)
 
         # Flush the encoder
         packet = stream.encode()

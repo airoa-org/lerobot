@@ -75,15 +75,19 @@ def sample_images(image_paths: list[str]) -> np.ndarray:
 
 def sample_images_from_arrays(image_arrays: list[np.ndarray]) -> np.ndarray:
     """Return (N, C, H, W) uint8 from in-memory frames (HWC or CHW)."""
-    idxs = sample_indices(len(image_arrays)) if image_arrays else []
+    idxs = sample_indices(len(image_arrays))
     imgs: list[np.ndarray] = []
+
     for i in idxs:
-        arr = image_arrays[i]
-        if arr.dtype != np.uint8:
-            arr = arr.astype(np.uint8, copy=False)
-        img = np.transpose(arr, (2, 0, 1)) if (arr.ndim == 3 and arr.shape[-1] == 3) else arr
+        img = image_arrays[i].astype(np.uint8, copy=False)
+
+        # HWC -> CHW
+        if img.shape[-1] == 3:
+            img = np.transpose(img, (2, 0, 1))
+
         imgs.append(auto_downsample_height_width(img))
-    return np.stack(imgs, axis=0) if imgs else np.zeros((0, 3, 1, 1), dtype=np.uint8)
+
+    return np.stack(imgs, axis=0)
 
 
 def get_feature_stats(array: np.ndarray, axis: tuple, keepdims: bool) -> dict[str, np.ndarray]:
@@ -103,10 +107,10 @@ def compute_episode_stats(episode_data: dict[str, list[str] | np.ndarray], featu
             continue  # HACK: we should receive np.arrays of strings
         elif features[key]["dtype"] in ["image", "video"]:
             # data can be a list of file paths (default) or a list of in-memory arrays (memory backend)
-            if isinstance(data, list) and len(data) > 0 and isinstance(data[0], (str, bytes, bytearray)):
-                ep_ft_array = sample_images(data)  # list of image paths
-            else:
+            if isinstance(data[0], np.ndarray):
                 ep_ft_array = sample_images_from_arrays(data)  # list of np.ndarray
+            else:
+                ep_ft_array = sample_images(data)  # list of paths
             axes_to_reduce = (0, 2, 3)  # keep channel dim
             keepdims = True
         else:

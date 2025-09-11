@@ -803,13 +803,7 @@ class LeRobotDataset(torch.utils.data.Dataset):
             dtype = self.features[key]["dtype"]
             if dtype in ["image", "video"]:
                 if dtype == "video" and self.frame_staging == "memory":
-                    arr = frame[key]
-                    if isinstance(arr, torch.Tensor):
-                        arr = arr.cpu().numpy()
-                    if arr.dtype != np.uint8:
-                        arr = arr.astype(np.uint8, copy=False)
-                    arr = np.ascontiguousarray(arr)
-                    self.episode_buffer[key].append(arr)
+                    self.episode_buffer[key].append(frame[key])
                 else:
                     img_path = self._get_image_file_path(
                         episode_index=self.episode_buffer["episode_index"],
@@ -986,14 +980,14 @@ class LeRobotDataset(torch.utils.data.Dataset):
                 continue
 
             frames = self.episode_buffer.get(key, []) if self.episode_buffer is not None else []
-            use_memory = len(frames) > 0 and not isinstance(frames[0], (str, bytes, bytearray))
+            use_memory = len(frames) > 0 and isinstance(frames[0], np.ndarray)
             if use_memory:
                 encode_video_frames_in_memory(
                     frames,
                     video_path,
                     self.fps,
                     overwrite=True,
-                    input_format=self.input_pix_fmt,
+                    input_pix_fmt=self.input_pix_fmt,
                 )
             else:
                 img_dir = self._get_image_file_path(
