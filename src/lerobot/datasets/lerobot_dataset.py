@@ -69,6 +69,7 @@ from lerobot.datasets.video_utils import (
     VideoFrame,
     decode_video_frames,
     encode_video_frames,
+    encode_video_frames_in_memory,
     get_safe_default_codec,
     get_video_info,
 )
@@ -457,6 +458,8 @@ class LeRobotDataset(torch.utils.data.Dataset):
         self.delta_indices = None
         self.batch_encoding_size = batch_encoding_size
         self.episodes_since_last_encoding = 0
+        self.frame_staging = "disk"  # or "memory"
+        self.input_pix_fmt = "rgb24"
 
         # Unused attributes
         self.image_writer = None
@@ -797,14 +800,20 @@ class LeRobotDataset(torch.utils.data.Dataset):
                     f"An element of the frame is not in the features. '{key}' not in '{self.features.keys()}'."
                 )
 
-            if self.features[key]["dtype"] in ["image", "video"]:
-                img_path = self._get_image_file_path(
-                    episode_index=self.episode_buffer["episode_index"], image_key=key, frame_index=frame_index
-                )
-                if frame_index == 0:
-                    img_path.parent.mkdir(parents=True, exist_ok=True)
-                self._save_image(frame[key], img_path)
-                self.episode_buffer[key].append(str(img_path))
+            dtype = self.features[key]["dtype"]
+            if dtype in ["image", "video"]:
+                if dtype == "video" and self.frame_staging == "memory":
+                    self.episode_buffer[key].append(frame[key])
+                else:
+                    img_path = self._get_image_file_path(
+                        episode_index=self.episode_buffer["episode_index"],
+                        image_key=key,
+                        frame_index=frame_index,
+                    )
+                    if frame_index == 0:
+                        img_path.parent.mkdir(parents=True, exist_ok=True)
+                    self._save_image(frame[key], img_path)
+                    self.episode_buffer[key].append(str(img_path))
             else:
                 self.episode_buffer[key].append(frame[key])
 
@@ -969,11 +978,24 @@ class LeRobotDataset(torch.utils.data.Dataset):
             if video_path.is_file():
                 # Skip if video is already encoded. Could be the case when resuming data recording.
                 continue
-            img_dir = self._get_image_file_path(
-                episode_index=episode_index, image_key=key, frame_index=0
-            ).parent
-            encode_video_frames(img_dir, video_path, self.fps, overwrite=True)
-            shutil.rmtree(img_dir)
+
+            frames = self.episode_buffer.get(key, []) if self.episode_buffer is not None else []
+            use_memory = len(frames) > 0 and isinstance(frames[0], np.ndarray)
+            if use_memory:
+                encode_video_frames_in_memory(
+                    frames,
+                    video_path,
+                    self.fps,
+                    overwrite=True,
+                    input_pix_fmt=self.input_pix_fmt,
+                )
+            else:
+                img_dir = self._get_image_file_path(
+                    episode_index=episode_index, image_key=key, frame_index=0
+                ).parent
+                encode_video_frames(img_dir, video_path, self.fps, overwrite=True)
+                if img_dir.is_dir():
+                    shutil.rmtree(img_dir)
 
         # Update video info (only needed when first episode is encoded since it reads from episode 0)
         if len(self.meta.video_keys) > 0 and episode_index == 0:
@@ -1014,6 +1036,8 @@ class LeRobotDataset(torch.utils.data.Dataset):
         image_writer_threads: int = 0,
         video_backend: str | None = None,
         batch_encoding_size: int = 1,
+        frame_staging: str = "disk",
+        input_pix_fmt: str = "rgb24",
     ) -> "LeRobotDataset":
         """Create a LeRobot Dataset from scratch in order to record data."""
         obj = cls.__new__(cls)
@@ -1046,6 +1070,13 @@ class LeRobotDataset(torch.utils.data.Dataset):
         obj.delta_indices = None
         obj.episode_data_index = None
         obj.video_backend = video_backend if video_backend is not None else get_safe_default_codec()
+        obj.frame_staging = frame_staging
+        obj.input_pix_fmt = input_pix_fmt
+        if obj.frame_staging == "memory" and obj.batch_encoding_size > 1:
+            logging.warning(
+                "'memory' frame_staging does not support batch_encoding_size>1; falling back to 'disk'."
+            )
+            obj.frame_staging = "disk"
         return obj
 
 
