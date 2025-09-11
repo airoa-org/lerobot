@@ -13,10 +13,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import numpy as np
 
 from lerobot.datasets.utils import load_image_as_numpy
-from typing import List
 
 
 def estimate_num_samples(
@@ -73,7 +73,7 @@ def sample_images(image_paths: list[str]) -> np.ndarray:
     return images
 
 
-def sample_images_from_arrays(image_arrays: List[np.ndarray]) -> np.ndarray:
+def sample_images_from_arrays(image_arrays: list[np.ndarray]) -> np.ndarray:
     """Return (N, C, H, W) uint8 from in-memory frames (HWC or CHW)."""
     idxs = sample_indices(len(image_arrays)) if image_arrays else []
     imgs: list[np.ndarray] = []
