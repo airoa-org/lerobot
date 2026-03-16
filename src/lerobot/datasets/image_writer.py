@@ -13,6 +13,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import logging
 import multiprocessing
 import queue
 import threading
@@ -21,6 +22,8 @@ from pathlib import Path
 import numpy as np
 import PIL.Image
 import torch
+
+logger = logging.getLogger(__name__)
 
 
 def safe_stop_image_writer(func):
@@ -31,7 +34,7 @@ def safe_stop_image_writer(func):
             dataset = kwargs.get("dataset")
             image_writer = getattr(dataset, "image_writer", None) if dataset else None
             if image_writer is not None:
-                print("Waiting for image writer to terminate...")
+                logger.warning("Waiting for image writer to terminate...")
                 image_writer.stop()
             raise e
 
@@ -68,7 +71,29 @@ def image_array_to_pil_image(image_array: np.ndarray, range_check: bool = True) 
     return PIL.Image.fromarray(image_array)
 
 
-def write_image(image: np.ndarray | PIL.Image.Image, fpath: Path):
+def write_image(image: np.ndarray | PIL.Image.Image, fpath: Path, compress_level: int = 1):
+    """
+    Saves a NumPy array or PIL Image to a file.
+
+    This function handles both NumPy arrays and PIL Image objects, converting
+    the former to a PIL Image before saving. It includes error handling for
+    the save operation.
+
+    Args:
+        image (np.ndarray | PIL.Image.Image): The image data to save.
+        fpath (Path): The destination file path for the image.
+        compress_level (int, optional): The compression level for the saved
+            image, as used by PIL.Image.save(). Defaults to 1.
+            Refer to: https://github.com/huggingface/lerobot/pull/2135
+            for more details on the default value rationale.
+
+    Raises:
+        TypeError: If the input 'image' is not a NumPy array or a
+            PIL.Image.Image object.
+
+    Side Effects:
+        Logs an error message if the image writing process fails for any reason.
+    """
     try:
         if isinstance(image, np.ndarray):
             img = image_array_to_pil_image(image)
@@ -76,9 +101,9 @@ def write_image(image: np.ndarray | PIL.Image.Image, fpath: Path):
             img = image
         else:
             raise TypeError(f"Unsupported image type: {type(image)}")
-        img.save(fpath)
+        img.save(fpath, compress_level=compress_level)
     except Exception as e:
-        print(f"Error writing image {fpath}: {e}")
+        logger.error("Error writing image %s: %s", fpath, e)
 
 
 def worker_thread_loop(queue: queue.Queue):
@@ -87,8 +112,8 @@ def worker_thread_loop(queue: queue.Queue):
         if item is None:
             queue.task_done()
             break
-        image_array, fpath = item
-        write_image(image_array, fpath)
+        image_array, fpath, compress_level = item
+        write_image(image_array, fpath, compress_level)
         queue.task_done()
 
 
@@ -146,11 +171,13 @@ class AsyncImageWriter:
                 p.start()
                 self.processes.append(p)
 
-    def save_image(self, image: torch.Tensor | np.ndarray | PIL.Image.Image, fpath: Path):
+    def save_image(
+        self, image: torch.Tensor | np.ndarray | PIL.Image.Image, fpath: Path, compress_level: int = 1
+    ):
         if isinstance(image, torch.Tensor):
             # Convert tensor to numpy array to minimize main process time
             image = image.cpu().numpy()
-        self.queue.put((image, fpath))
+        self.queue.put((image, fpath, compress_level))
 
     def wait_until_done(self):
         self.queue.join()

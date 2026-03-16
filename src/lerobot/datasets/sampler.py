@@ -13,15 +13,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import logging
 from collections.abc import Iterator
 
 import torch
+
+logger = logging.getLogger(__name__)
 
 
 class EpisodeAwareSampler:
     def __init__(
         self,
-        episode_data_index: dict,
+        dataset_from_indices: list[int],
+        dataset_to_indices: list[int],
         episode_indices_to_use: list | None = None,
         drop_n_first_frames: int = 0,
         drop_n_last_frames: int = 0,
@@ -30,21 +34,42 @@ class EpisodeAwareSampler:
         """Sampler that optionally incorporates episode boundary information.
 
         Args:
-            episode_data_index: Dictionary with keys 'from' and 'to' containing the start and end indices of each episode.
+            dataset_from_indices: List of indices containing the start of each episode in the dataset.
+            dataset_to_indices: List of indices containing the end of each episode in the dataset.
             episode_indices_to_use: List of episode indices to use. If None, all episodes are used.
                                     Assumes that episodes are indexed from 0 to N-1.
             drop_n_first_frames: Number of frames to drop from the start of each episode.
             drop_n_last_frames: Number of frames to drop from the end of each episode.
             shuffle: Whether to shuffle the indices.
         """
+        if drop_n_first_frames < 0:
+            raise ValueError(f"drop_n_first_frames must be >= 0, got {drop_n_first_frames}")
+        if drop_n_last_frames < 0:
+            raise ValueError(f"drop_n_last_frames must be >= 0, got {drop_n_last_frames}")
+
         indices = []
         for episode_idx, (start_index, end_index) in enumerate(
-            zip(episode_data_index["from"], episode_data_index["to"], strict=True)
+            zip(dataset_from_indices, dataset_to_indices, strict=True)
         ):
             if episode_indices_to_use is None or episode_idx in episode_indices_to_use:
-                indices.extend(
-                    range(start_index.item() + drop_n_first_frames, end_index.item() - drop_n_last_frames)
-                )
+                ep_length = end_index - start_index
+                if drop_n_first_frames + drop_n_last_frames >= ep_length:
+                    logger.warning(
+                        "Episode %d has %d frames but drop_n_first_frames=%d and "
+                        "drop_n_last_frames=%d removes all frames. Skipping.",
+                        episode_idx,
+                        ep_length,
+                        drop_n_first_frames,
+                        drop_n_last_frames,
+                    )
+                    continue
+                indices.extend(range(start_index + drop_n_first_frames, end_index - drop_n_last_frames))
+
+        if not indices:
+            raise ValueError(
+                "No valid frames remain after applying drop_n_first_frames and drop_n_last_frames. "
+                "All episodes were either filtered out or had too few frames."
+            )
 
         self.indices = indices
         self.shuffle = shuffle
